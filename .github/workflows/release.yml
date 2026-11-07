@@ -1,0 +1,52 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - {arch: amd64, goarch: amd64, goarm: ""}
+          - {arch: arm64, goarch: arm64, goarm: ""}
+          - {arch: armv7, goarch: arm, goarm: "7"}
+          - {arch: 386, goarch: "386", goarm: ""}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+            -ldflags "-s -w -X github.com/subsll/cairnwatch/internal/app.Version=${version}" \
+            -o "cairnwatch_${version}_linux_${{ matrix.arch }}" ./cmd/cairnwatch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cairnwatch-linux-${{ matrix.arch }}
+          path: cairnwatch_*
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: cd artifacts && sha256sum cairnwatch_* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

@@ -1,0 +1,9 @@
+/dist/
+/cairnwatch
+*.test
+coverage.out
+.DS_Store
+.env
+.env.*
+.gocache/
+.gomodcache/
