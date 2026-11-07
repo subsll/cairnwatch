@@ -182,7 +182,14 @@ the email and derived data inside your environment:
 ```sh
 # Local OpenAI-compatible endpoint; use the model name your server exposes.
 export OPENAI_API_KEY=local
-cairnwatch run   --email suspicious.eml   --case ./cases/local-analysis   --operator "Jane Doe"   --authorized   --send-email-content   --base-url http://127.0.0.1:11434/v1   --model local-model
+cairnwatch run \
+  --email suspicious.eml \
+  --case ./cases/local-analysis \
+  --operator "Jane Doe" \
+  --authorized \
+  --send-email-content \
+  --base-url http://127.0.0.1:11434/v1 \
+  --model local-model
 ```
 
 Local endpoints that do not require authentication still need a non-empty API
