@@ -25,7 +25,7 @@ import (
 	"github.com/subsll/cairnwatch/internal/openai"
 )
 
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 var urlPattern = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
 
@@ -49,6 +49,13 @@ type Config struct {
 	KeepWork         bool
 	WorkDir          string
 	Client           *openai.Client
+	Progress         func(string)
+}
+
+func (c Config) stage(label string) {
+	if c.Progress != nil {
+		c.Progress(label)
+	}
 }
 
 // Result describes the completed investigation.
@@ -212,9 +219,11 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		cfg.CaseName = "Cairnwatch: " + filepath.Base(emailPath)
 	}
 	// Stratum first: the raw email is preserved before any analysis.
+	cfg.stage("initializing Stratum case")
 	if err := stratumcase.Init(ctx, cfg.Stratum, caseDir, cfg.CaseName, cfg.Operator, cfg.Org); err != nil {
 		return nil, fmt.Errorf("initialize Stratum case: %w", err)
 	}
+	cfg.stage("preserving source email")
 	if err := stratumcase.Add(ctx, cfg.Stratum, caseDir, emailPath, "source email", "Cairnwatch input"); err != nil {
 		return nil, fmt.Errorf("preserve source email: %w", err)
 	}
@@ -225,6 +234,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	writeJSON(filepath.Join(work, "authorization.json"), auth)
 
+	cfg.stage("parsing email metadata with Envelode")
 	envelodePath := filepath.Join(work, "envelode.json")
 	stdout, stderr, code, runErr := r.run(ctx, "setup", cfg.Envelode,
 		[]string{"--no-dns", "--compact", "-o", envelodePath, emailPath}, 2*time.Minute)
@@ -239,6 +249,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	scopeData, _ := json.MarshalIndent(map[string]any{"domains": domains}, "", "  ")
 	_ = os.WriteFile(filepath.Join(work, "scope.json"), append(scopeData, '\n'), 0o644)
 
+	cfg.stage("running deterministic detection rules")
 	det := detect.Analyze(raw, envelodeJSON)
 	detectionJSON, _ := json.MarshalIndent(det, "", "  ")
 	_ = os.WriteFile(filepath.Join(work, "detections.json"), append(detectionJSON, '\n'), 0o644)
@@ -253,6 +264,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	var report string
 	var toolCalls, promptTokens, completionTokens int
 	for step := 0; step < cfg.MaxSteps; step++ {
+		cfg.stage("asking model to analyse the email")
 		msg, usage, err := cfg.Client.Chat(ctx, messages, tools)
 		if err != nil {
 			return nil, fmt.Errorf("model request: %w", err)
@@ -270,6 +282,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		submitted := false
 		for _, call := range msg.ToolCalls {
 			toolCalls++
+			r.cfg.stage(toolStage(call.Function.Name, call.Function.Arguments))
 			content, done, err := r.executeTool(ctx, call, envelodeJSON, domains, raw)
 			if err != nil {
 				content = `{"error":` + jsonString(err.Error()) + `}`
@@ -289,6 +302,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	if strings.TrimSpace(report) == "" {
 		return nil, errors.New("model did not submit a report within the step limit")
 	}
+	cfg.stage("writing analysis report")
 	report += "\n\n" + detect.Markdown(det)
 	reportPath := filepath.Join(work, "cairnwatch-report.md")
 	if !strings.HasSuffix(report, "\n") {
@@ -310,13 +324,16 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	writeJSON(filepath.Join(work, "manifest.json"), manifest)
 
+	cfg.stage("preserving analysis in Stratum")
 	if err := stratumcase.Add(ctx, cfg.Stratum, caseDir, work, "Cairnwatch analysis", "automated defensive analysis"); err != nil {
 		return nil, fmt.Errorf("preserve analysis in Stratum: %w", err)
 	}
 	reportsDir := filepath.Join(caseDir, "reports")
+	cfg.stage("generating Stratum reports")
 	if err := stratumcase.Report(ctx, cfg.Stratum, caseDir, reportsDir); err != nil {
 		return nil, fmt.Errorf("generate Stratum report: %w", err)
 	}
+	cfg.stage("verifying evidence chains")
 	if _, err := stratumcase.Verify(ctx, cfg.Stratum, caseDir); err != nil {
 		return nil, fmt.Errorf("verify Stratum case: %w", err)
 	}
@@ -425,6 +442,28 @@ func (r *runner) subsoil(ctx context.Context, domain string) (string, error) {
 	}
 	b, _ := json.MarshalIndent(summary, "", "  ")
 	return string(b), nil
+}
+
+func toolStage(name, args string) string {
+	switch name {
+	case "envelode_extract":
+		return "reading Envelode metadata"
+	case "detections_extract":
+		return "reading detection log"
+	case "subsoil_passive_dns":
+		var a struct {
+			Domain string `json:"domain"`
+		}
+		_ = json.Unmarshal([]byte(args), &a)
+		if a.Domain != "" {
+			return "passive DNS: " + a.Domain
+		}
+		return "running passive DNS"
+	case "submit_report":
+		return "writing analysis report"
+	default:
+		return "running tool " + name
+	}
 }
 
 func systemPrompt(domains []string, subsoil string) string {

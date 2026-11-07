@@ -16,9 +16,10 @@ import (
 
 	"github.com/subsll/cairnwatch/internal/investigate"
 	"github.com/subsll/cairnwatch/internal/openai"
+	"github.com/subsll/cairnwatch/internal/progress"
 )
 
-var Version = "0.2.0"
+var Version = "0.3.0"
 
 // Run executes the CLI.
 func Run(args []string, out, errOut io.Writer) int {
@@ -46,14 +47,14 @@ func run(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("cairnwatch run", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	var (
-		email, caseDir, caseName, operator, org string
-		authorized, sendContent, keepWork       bool
-		workDir, sources                        string
-		envelode, subsoil, stratum              string
-		baseURL, model, apiKeyEnv               string
-		timeout                                 time.Duration
-		maxSteps, maxEmailBytes                 int
-		scopes                                  stringList
+		email, caseDir, caseName, operator, org      string
+		authorized, sendContent, keepWork, noSpinner bool
+		workDir, sources                             string
+		envelode, subsoil, stratum                   string
+		baseURL, model, apiKeyEnv                    string
+		timeout                                      time.Duration
+		maxSteps, maxEmailBytes                      int
+		scopes                                       stringList
 	)
 	fs.StringVar(&email, "email", "", "raw .eml/email file (required)")
 	fs.StringVar(&caseDir, "case", "", "new Stratum case directory (required)")
@@ -65,6 +66,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.Var(&scopes, "scope", "additional allowed domain (repeatable)")
 	fs.StringVar(&workDir, "workdir", "", "analysis working directory")
 	fs.BoolVar(&keepWork, "keep-work", false, "keep the working directory")
+	fs.BoolVar(&noSpinner, "no-spinner", false, "disable the terminal progress spinner")
 	fs.StringVar(&envelode, "envelode-bin", "envelode", "Envelode binary")
 	fs.StringVar(&subsoil, "subsoil-bin", "subsoil", "Subsoil binary")
 	fs.StringVar(&stratum, "stratum-bin", "stratum", "Stratum binary")
@@ -135,9 +137,14 @@ func run(args []string, out, errOut io.Writer) int {
 		KeepWork: keepWork, WorkDir: workDir,
 		Client: &openai.Client{BaseURL: baseURL, APIKey: key, Model: model},
 	}
+	sp := progress.New(errOut, !noSpinner && progress.IsTerminal(os.Stderr) && os.Getenv("TERM") != "dumb")
+	cfg.Progress = sp.Set
+	sp.Start("starting investigation")
+	defer sp.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	res, err := investigate.Run(ctx, cfg)
+	sp.Stop()
 	if err != nil {
 		fmt.Fprintf(errOut, "cairnwatch: %v\n", err)
 		return 1

@@ -125,6 +125,20 @@ Cairnwatch does not fetch links or execute HTML/JavaScript. A dedicated
 controlled browser/network comparison is required to validate live cloaking.
 Absence of detections is not evidence that an email is benign.
 
+## Progress display
+
+On an interactive terminal Cairnwatch shows a spinner with the current stage:
+
+```text
+⠹ passive DNS: example.com  00:12
+```
+
+Stages include case initialization, source email preservation, Envelode parsing,
+detection, model reasoning, each passive Subsoil scan, report writing, Stratum
+report generation and evidence verification. The spinner writes only to stderr,
+is hidden when stderr is not a terminal, and can be disabled with
+`--no-spinner`.
+
 ## What happens
 
 1. Cairnwatch creates a Stratum case and adds the raw email.
@@ -239,6 +253,7 @@ establish authenticity, attribution or legal admissibility.
 --timeout <duration>        overall timeout (default 10m)
 --workdir <dir>             analysis work directory
 --keep-work                 keep the work directory
+--no-spinner                disable the terminal progress spinner
 ```
 
 ## Development

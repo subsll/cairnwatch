@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-VERSION ?= 0.2.0
+VERSION ?= 0.3.0
 GO      ?= go
 DIST    := dist
 LDFLAGS := -s -w -X github.com/subsll/cairnwatch/internal/app.Version=$(VERSION)

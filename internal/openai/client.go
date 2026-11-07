@@ -114,7 +114,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (Me
 		}
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "cairnwatch/0.2")
+		req.Header.Set("User-Agent", "cairnwatch/0.3")
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
 			lastErr = err
