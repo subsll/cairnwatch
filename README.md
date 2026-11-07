@@ -15,6 +15,11 @@ authorised blue-team work.
 - `--authorized` is required. The attestation is recorded in the case.
 - Raw email content is **not** sent to the model unless
   `--send-email-content` is supplied.
+- **External LLM warning:** if you use a hosted third-party API, enabling
+  `--send-email-content` sends the raw email (headers, body and any attachment
+  data encoded in the message) to that provider. Prefer a local
+  OpenAI-compatible model/server. See
+  [Privacy and model handling](#privacy-and-model-handling).
 - Subsoil is always invoked in `--passive` mode. Cairnwatch never requests
   brute force, zone transfers, HTTP probes, SMTP connections or exploitation.
 - The model may only pass domains extracted from the email, from links in the
@@ -163,11 +168,31 @@ The analysis work directory contains `envelode.json`, `detections.json`,
 
 ## Privacy and model handling
 
-`--send-email-content` sends the raw email, including headers and body, to the
-configured API provider. Email can contain personal data, credentials, client
-material or malicious content. Use a provider and data-handling arrangement
-appropriate for your organisation, or omit the flag and accept metadata-only
-analysis.
+> **Do not send sensitive email to an unapproved third-party API.**
+>
+> When `--send-email-content` is enabled and `--base-url` points to an external
+> provider (OpenAI, DeepSeek, OpenRouter, etc.), Cairnwatch sends the **raw
+> email**—headers, body and any attachment data encoded in the raw message—to
+> that provider. Even without `--send-email-content`, structured metadata,
+> detection results and tool output are sent to the model endpoint.
+
+**Use a local LLM wherever possible.** An OpenAI-compatible local server keeps
+the email and derived data inside your environment:
+
+```sh
+# Local OpenAI-compatible endpoint; use the model name your server exposes.
+export OPENAI_API_KEY=local
+cairnwatch run   --email suspicious.eml   --case ./cases/local-analysis   --operator "Jane Doe"   --authorized   --send-email-content   --base-url http://127.0.0.1:11434/v1   --model local-model
+```
+
+Local endpoints that do not require authentication still need a non-empty API
+key environment variable; use a placeholder such as `local`.
+
+If an external provider is unavoidable, use an organisation-approved service
+and data-processing agreement, minimise the data sent, disable training or
+retention where the provider allows it, and confirm that your authorisation
+covers third-party processing. Email can contain personal data, credentials,
+client material or malicious content.
 
 Subsoil makes DNS queries and may contact the passive sources you configure
 (default: `crt.sh,certspotter`). It does not contact the target's SMTP or web
