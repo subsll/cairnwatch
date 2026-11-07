@@ -3,8 +3,9 @@
 **A small defensive email investigation harness for Envelode, Subsoil and Stratum.**
 
 Cairnwatch gives an OpenAI-compatible analyst model a narrow, auditable toolset:
-Envelode extracts email metadata, Subsoil runs passive-only DNS, and Stratum
-preserves the source and every analysis artefact in a hash-chained case.
+Envelode extracts email metadata, a deterministic detector logs phishing
+techniques, Subsoil runs passive-only DNS, and Stratum preserves the source and
+every analysis artefact in a hash-chained case.
 
 It is deliberately not another scanner. It is an orchestration layer for
 authorised blue-team work.
@@ -19,7 +20,7 @@ authorised blue-team work.
 - The model may only pass domains extracted from the email, from links in the
   email, or from `--scope`. The tool validates the allowlist again at runtime.
 - The model has no shell, filesystem, network or arbitrary-command tool. It can
-  only call the three fixed functions described below.
+  only call the four fixed functions described below.
 - The model's report is evidence, not a verdict. An analyst must verify findings.
 
 Use Cairnwatch only on email and infrastructure you own or are explicitly
@@ -88,23 +89,56 @@ the case or printed.
 The case directory must not already contain a case. Cairnwatch creates it with
 Stratum and preserves the source email before calling the model.
 
+## Detection system
+
+Before the model runs, Cairnwatch applies deterministic email-only heuristics
+and writes a technique log. Each detection has a stable ID, technique,
+severity, confidence, evidence and location.
+
+| Technique | Examples |
+| --- | --- |
+| `CLOAKING` | Visible link text differs from the destination; URL shorteners; redirect parameters carrying nested URLs; hidden CSS around links; identical text pointing to multiple destinations |
+| `OBFUSCATION` | `javascript:`/`data:` links; base64 or `atob`/`eval` HTML patterns |
+| `MASQUERADING` | Punycode or non-ASCII hostnames |
+| `URL_ANOMALY` | IP-literal URLs; userinfo before host; encoded URL structure |
+| `AUTH_FAILURE` | SPF, DKIM or DMARC failure results in the parsed authentication headers |
+| `HEADER_ANOMALY` | From and Return-Path domains differ |
+| `CREDENTIAL_HARVEST` | Password input fields in email HTML |
+| `PHISHING_LINK` | External links in the message |
+| `PHISHING_ATTACHMENT` | Risky attachment extensions such as `.exe`, `.js`, `.docm`, `.zip` |
+| `TRACKING` | 1x1 tracking-pixel-like images |
+| `SOCIAL_ENGINEERING` | Urgency, credential, invoice/payment or MFA language |
+
+The log is written to `detections.json` and `detections.md`, exposed to the model
+as `detections_extract`, and appended to the final report under **Automated
+Detection Log**. ATT&CK IDs are included where a reasonable mapping exists;
+they are approximate and are not a claim of attribution.
+
+**Cloaking limitation:** email-only analysis cannot observe cloaking that
+changes by user-agent, source IP, geolocation, time or authentication state.
+Cairnwatch does not fetch links or execute HTML/JavaScript. A dedicated
+controlled browser/network comparison is required to validate live cloaking.
+Absence of detections is not evidence that an email is benign.
+
 ## What happens
 
 1. Cairnwatch creates a Stratum case and adds the raw email.
 2. Envelode runs with `--no-dns` to produce metadata-only JSON.
-3. Cairnwatch extracts sender domains and link domains into an allowlist.
-4. The model is asked to call `envelode_extract`, then `subsoil_passive_dns`
-   for relevant allowlisted domains, then `submit_report`.
-5. Subsoil runs with `--passive`, no brute force, no AXFR and no HTTP probes.
-6. The model's Markdown report and a run manifest are written.
-7. The whole analysis directory is added to the Stratum case.
-8. Stratum generates Markdown/JSON reports and re-verifies the evidence chains.
+3. The deterministic detector logs techniques and evidence.
+4. Cairnwatch extracts sender domains and link domains into an allowlist.
+5. The model is asked to call `envelode_extract`, `detections_extract`, then
+   `subsoil_passive_dns` for relevant allowlisted domains, then `submit_report`.
+6. Subsoil runs with `--passive`, no brute force, no AXFR and no HTTP probes.
+7. The model's Markdown report and a run manifest are written.
+8. The whole analysis directory is added to the Stratum case.
+9. Stratum generates Markdown/JSON reports and re-verifies the evidence chains.
 
 ## Tools exposed to the model
 
 | Tool | Purpose |
 | --- | --- |
 | `envelode_extract` | Metadata-only email parse, authentication headers, IPs and sender domains |
+| `detections_extract` | Deterministic technique log with evidence and limitations |
 | `subsoil_passive_dns` | Passive-only Subsoil run against one allowlisted domain |
 | `submit_report` | Final Markdown report |
 
@@ -122,9 +156,9 @@ The model has no other tools.
 <case>/custody.jsonl                  custody chain
 ```
 
-The analysis work directory contains `envelode.json`, `subsoil/<domain>/`,
-`journal.jsonl`, `manifest.json`, `scope.json` and `authorization.json`; all of
-it is added to Stratum. Use `--keep-work` to retain the local copy, or
+The analysis work directory contains `envelode.json`, `detections.json`,
+`detections.md`, `subsoil/<domain>/`, `journal.jsonl`, `manifest.json`,
+`scope.json` and `authorization.json`; all of it is added to Stratum. Use `--keep-work` to retain the local copy, or
 `--workdir <dir>` to choose it.
 
 ## Privacy and model handling
@@ -184,8 +218,8 @@ go vet ./...
 make linux
 ```
 
-The tests use a mock OpenAI-compatible server and synthetic Envelode, Subsoil
-and Stratum executables. No network access or API key is required.
+The tests use a mock OpenAI-compatible server, synthetic Envelode/Subsoil/Stratum
+executables and cloaking fixtures. No network access or API key is required.
 
 ## License
 

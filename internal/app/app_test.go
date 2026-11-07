@@ -15,7 +15,7 @@ import (
 func TestRunWithMockModel(t *testing.T) {
 	dir := t.TempDir()
 	email := filepath.Join(dir, "phish.eml")
-	raw := "From: attacker@example.com\nTo: victim@example.org\nSubject: Invoice\n\nPay https://example.com/login now.\n"
+	raw := "From: attacker@example.com\nTo: victim@example.org\nSubject: Invoice\nContent-Type: text/html\n\n<html><body><a href=\"https://evil.example/login\">https://example.com/login</a></body></html>\n"
 	if err := os.WriteFile(email, []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +114,9 @@ exit 0
 	}
 	if !strings.Contains(string(data), "Phishing indicators") {
 		t.Fatalf("report = %s", data)
+	}
+	if !strings.Contains(string(data), "CLOAKING") || !strings.Contains(string(data), "Automated Detection Log") {
+		t.Fatalf("detection appendix missing: %s", data)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "case", "evidence.jsonl")); err != nil {
 		t.Fatal("case evidence missing")

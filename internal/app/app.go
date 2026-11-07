@@ -18,7 +18,7 @@ import (
 	"github.com/subsll/cairnwatch/internal/openai"
 )
 
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 // Run executes the CLI.
 func Run(args []string, out, errOut io.Writer) int {

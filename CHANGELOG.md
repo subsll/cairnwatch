@@ -4,6 +4,19 @@ All notable changes to Cairnwatch are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-11-07
+
+### Added
+
+- Deterministic phishing detection layer with technique IDs and evidence.
+- Cloaking heuristics: link text/destination mismatch, shorteners, redirect
+  parameters, hidden CSS, identical text with multiple destinations.
+- URL, obfuscation, punycode/IP, header/auth, attachment, tracking and
+  social-engineering indicators.
+- `detections.json` and `detections.md` evidence artefacts.
+- `detections_extract` model tool and report appendix.
+- Detection counts in the run manifest.
+
 ## [0.1.0] — 2026-11-07
 
 ### Added
