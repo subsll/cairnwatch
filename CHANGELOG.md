@@ -4,6 +4,23 @@ All notable changes to Cairnwatch are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] — 2026-11-07
+
+### Added
+
+- `--verbose` / `-v` model and tool tracing, showing step count, finish reason,
+  response size, tool-call names, tool errors, result sizes, durations and token
+  usage without logging email or report bodies.
+- A final-step instruction that asks the model to stop discovery and submit its
+  best evidence-based report before the step budget expires.
+- Step-limit errors now include the last finish reason, content length and tool
+  calls, plus a pointer to `--verbose`.
+
+### Changed
+
+- Chat responses retain the provider's `finish_reason` for diagnostics.
+- Version bumped to 0.3.1.
+
 ## [0.3.0] — 2026-11-07
 
 ### Added

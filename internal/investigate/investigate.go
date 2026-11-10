@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -25,7 +26,7 @@ import (
 	"github.com/subsll/cairnwatch/internal/openai"
 )
 
-const Version = "0.3.0"
+const Version = "0.3.1"
 
 var urlPattern = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
 
@@ -50,12 +51,24 @@ type Config struct {
 	WorkDir          string
 	Client           *openai.Client
 	Progress         func(string)
+	// Trace, when non-nil, receives model-step metadata and tool activity.
+	// Message bodies, report bodies, tool arguments, and tool results are not
+	// written. The caller is responsible for warning that domain names may be
+	// present in tool-call summaries.
+	Trace io.Writer
 }
 
 func (c Config) stage(label string) {
 	if c.Progress != nil {
 		c.Progress(label)
 	}
+}
+
+func (c Config) tracef(format string, args ...any) {
+	if c.Trace == nil {
+		return
+	}
+	fmt.Fprintf(c.Trace, "cairnwatch: trace: "+format+"\n", args...)
 }
 
 // Result describes the completed investigation.
@@ -263,7 +276,21 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 
 	var report string
 	var toolCalls, promptTokens, completionTokens int
+	var lastFinishReason string
+	var lastContentBytes int
+	var lastToolCalls string
 	for step := 0; step < cfg.MaxSteps; step++ {
+		if step == cfg.MaxSteps-1 && cfg.MaxSteps > 1 {
+			messages = append(messages, openai.Message{
+				Role: "user",
+				Content: "You have reached your final allowed model step. " +
+					"Do not call any more discovery tools. Call submit_report now with " +
+					"the best evidence-based Markdown report you can produce and state " +
+					"the limitations. If a passive DNS result is still missing, submit " +
+					"only after the required allowlisted check has been run.",
+			})
+			cfg.tracef("step %d/%d: appended final-step submit_report instruction", step+1, cfg.MaxSteps)
+		}
 		cfg.stage("asking model to analyse the email")
 		msg, usage, err := cfg.Client.Chat(ctx, messages, tools)
 		if err != nil {
@@ -271,25 +298,37 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		}
 		promptTokens += usage.PromptTokens
 		completionTokens += usage.CompletionTokens
+		lastFinishReason = msg.FinishReason
+		lastContentBytes = len(msg.Content)
+		lastToolCalls = toolCallSummary(msg.ToolCalls)
+		cfg.tracef("step %d/%d: finish_reason=%q content_bytes=%d tool_calls=%s prompt_tokens=%d completion_tokens=%d",
+			step+1, cfg.MaxSteps, msg.FinishReason, len(msg.Content), lastToolCalls, usage.PromptTokens, usage.CompletionTokens)
 		messages = append(messages, msg)
 		if len(msg.ToolCalls) == 0 {
 			if strings.TrimSpace(msg.Content) != "" {
 				report = msg.Content
+				cfg.tracef("step %d/%d: accepting assistant content as the report", step+1, cfg.MaxSteps)
 				break
 			}
-			return nil, errors.New("model returned neither tool calls nor a report")
+			return nil, fmt.Errorf("model returned neither tool calls nor a report (finish_reason=%q, content_bytes=0)", msg.FinishReason)
 		}
 		submitted := false
 		for _, call := range msg.ToolCalls {
 			toolCalls++
+			cfg.tracef("step %d/%d: calling tool=%s id=%s args_bytes=%d", step+1, cfg.MaxSteps, call.Function.Name, call.ID, len(call.Function.Arguments))
 			r.cfg.stage(toolStage(call.Function.Name, call.Function.Arguments))
+			started := time.Now()
 			content, done, err := r.executeTool(ctx, call, envelodeJSON, domains, raw)
 			if err != nil {
+				cfg.tracef("step %d/%d: tool=%s error=%q duration_ms=%d", step+1, cfg.MaxSteps, call.Function.Name, truncate(err.Error(), 300), time.Since(started).Milliseconds())
 				content = `{"error":` + jsonString(err.Error()) + `}`
+			} else {
+				cfg.tracef("step %d/%d: tool=%s result_bytes=%d submitted=%t duration_ms=%d", step+1, cfg.MaxSteps, call.Function.Name, len(content), done, time.Since(started).Milliseconds())
 			}
 			if done {
 				report = content
 				submitted = true
+				cfg.tracef("step %d/%d: report submitted via submit_report (%d bytes)", step+1, cfg.MaxSteps, len(report))
 			}
 			messages = append(messages, openai.Message{
 				Role: "tool", ToolCallID: call.ID, Name: call.Function.Name, Content: truncate(content, 16000),
@@ -300,7 +339,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		}
 	}
 	if strings.TrimSpace(report) == "" {
-		return nil, errors.New("model did not submit a report within the step limit")
+		return nil, fmt.Errorf("model did not submit a report within the step limit (max_steps=%d, last finish_reason=%q, last content_bytes=%d, last tool_calls=%s; rerun with --verbose for step-by-step diagnostics)", cfg.MaxSteps, lastFinishReason, lastContentBytes, lastToolCalls)
 	}
 	cfg.stage("writing analysis report")
 	report += "\n\n" + detect.Markdown(det)
@@ -442,6 +481,29 @@ func (r *runner) subsoil(ctx context.Context, domain string) (string, error) {
 	}
 	b, _ := json.MarshalIndent(summary, "", "  ")
 	return string(b), nil
+}
+
+func toolCallSummary(calls []openai.ToolCall) string {
+	if len(calls) == 0 {
+		return "none"
+	}
+	names := make([]string, 0, len(calls))
+	for _, call := range calls {
+		name := call.Function.Name
+		if name == "" {
+			name = "(unnamed)"
+		}
+		if name == "subsoil_passive_dns" {
+			var args struct {
+				Domain string `json:"domain"`
+			}
+			if json.Unmarshal([]byte(call.Function.Arguments), &args) == nil && args.Domain != "" {
+				name += ":" + args.Domain
+			}
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, ",")
 }
 
 func toolStage(name, args string) string {

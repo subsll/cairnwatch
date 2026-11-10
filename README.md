@@ -254,7 +254,33 @@ establish authenticity, attribution or legal admissibility.
 --workdir <dir>             analysis work directory
 --keep-work                 keep the work directory
 --no-spinner                disable the terminal progress spinner
+--verbose, -v               trace model-step metadata and tool activity to stderr
 ```
+
+
+## Troubleshooting model-step failures
+
+`model did not submit a report within the step limit` means the model used every
+allowed model turn without calling `submit_report` or returning a non-empty final
+report. Cairnwatch now adds the last finish reason, content length and tool names
+to that error, and prints a final-step instruction asking the model to submit.
+
+Rerun with `--verbose` (and usually `--max-steps 16`) to see:
+
+- the response `finish_reason` and content length at each step;
+- which tools the model called, including allowlisted domains;
+- tool errors such as an empty report or a missing passive-DNS result;
+- token usage and the final-step submit instruction.
+
+Verbose output deliberately does **not** include the email body, report body,
+tool arguments or tool results, but tool-call summaries can contain domain names.
+It writes to stderr and disables the spinner so the trace stays readable.
+
+If the trace shows the same discovery tool repeatedly, the model is looping rather
+than reasoning to a conclusion. If it shows `submit_report` errors, fix that
+precondition or prompt. If it shows repeated `tool_calls` with no `submit_report`,
+try a model with more reliable OpenAI-style tool calling before increasing the
+step count further.
 
 ## Development
 

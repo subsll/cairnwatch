@@ -19,7 +19,7 @@ import (
 	"github.com/subsll/cairnwatch/internal/progress"
 )
 
-var Version = "0.3.0"
+var Version = "0.3.1"
 
 // Run executes the CLI.
 func Run(args []string, out, errOut io.Writer) int {
@@ -47,14 +47,14 @@ func run(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("cairnwatch run", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	var (
-		email, caseDir, caseName, operator, org      string
-		authorized, sendContent, keepWork, noSpinner bool
-		workDir, sources                             string
-		envelode, subsoil, stratum                   string
-		baseURL, model, apiKeyEnv                    string
-		timeout                                      time.Duration
-		maxSteps, maxEmailBytes                      int
-		scopes                                       stringList
+		email, caseDir, caseName, operator, org               string
+		authorized, sendContent, keepWork, noSpinner, verbose bool
+		workDir, sources                                      string
+		envelode, subsoil, stratum                            string
+		baseURL, model, apiKeyEnv                             string
+		timeout                                               time.Duration
+		maxSteps, maxEmailBytes                               int
+		scopes                                                stringList
 	)
 	fs.StringVar(&email, "email", "", "raw .eml/email file (required)")
 	fs.StringVar(&caseDir, "case", "", "new Stratum case directory (required)")
@@ -67,6 +67,8 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.StringVar(&workDir, "workdir", "", "analysis working directory")
 	fs.BoolVar(&keepWork, "keep-work", false, "keep the working directory")
 	fs.BoolVar(&noSpinner, "no-spinner", false, "disable the terminal progress spinner")
+	fs.BoolVar(&verbose, "verbose", false, "trace model-step metadata and tool activity to stderr")
+	fs.BoolVar(&verbose, "v", false, "alias for --verbose")
 	fs.StringVar(&envelode, "envelode-bin", "envelode", "Envelode binary")
 	fs.StringVar(&subsoil, "subsoil-bin", "subsoil", "Subsoil binary")
 	fs.StringVar(&stratum, "stratum-bin", "stratum", "Stratum binary")
@@ -129,15 +131,23 @@ func run(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 
+	client := &openai.Client{BaseURL: baseURL, APIKey: key, Model: model}
+	if verbose {
+		client.Trace = errOut
+		fmt.Fprintln(errOut, "cairnwatch: verbose diagnostics enabled; email and report bodies are not logged, but tool-call summaries may include domain names")
+	}
 	cfg := investigate.Config{
 		Email: email, CaseDir: caseDir, CaseName: caseName, Operator: operator, Org: org,
 		Authorized: authorized, SendEmailContent: sendContent, Scope: scopes,
 		Envelode: envelode, Subsoil: subsoil, Stratum: stratum, Sources: sources,
 		Timeout: timeout, MaxSteps: maxSteps, MaxEmailBytes: maxEmailBytes,
 		KeepWork: keepWork, WorkDir: workDir,
-		Client: &openai.Client{BaseURL: baseURL, APIKey: key, Model: model},
+		Client: client,
 	}
-	sp := progress.New(errOut, !noSpinner && progress.IsTerminal(os.Stderr) && os.Getenv("TERM") != "dumb")
+	if verbose {
+		cfg.Trace = errOut
+	}
+	sp := progress.New(errOut, !verbose && !noSpinner && progress.IsTerminal(os.Stderr) && os.Getenv("TERM") != "dumb")
 	cfg.Progress = sp.Set
 	sp.Start("starting investigation")
 	defer sp.Stop()

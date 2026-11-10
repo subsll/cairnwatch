@@ -102,7 +102,7 @@ exit 0
 		"--case-name", "Test case", "--operator", "Tester", "--authorized",
 		"--send-email-content", "--base-url", server.URL, "--model", "mock",
 		"--api-key-env", "CAIRN_TEST_KEY", "--envelode-bin", envelode,
-		"--subsoil-bin", subsoil, "--stratum-bin", stratum,
+		"--subsoil-bin", subsoil, "--stratum-bin", stratum, "--verbose",
 	}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())
@@ -123,6 +123,12 @@ exit 0
 	}
 	if reqs != 3 {
 		t.Fatalf("requests = %d", reqs)
+	}
+	if !strings.Contains(errOut.String(), "cairnwatch: trace: step 1/8") {
+		t.Fatalf("verbose trace missing: %s", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "calling tool=submit_report") {
+		t.Fatalf("verbose tool trace missing: %s", errOut.String())
 	}
 }
 
@@ -145,6 +151,7 @@ func toolResponse(id, name, args string) map[string]any {
 					"function": map[string]any{"name": name, "arguments": args},
 				}},
 			},
+			"finish_reason": "tool_calls",
 		}},
 		"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5},
 	}
