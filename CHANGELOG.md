@@ -4,6 +4,21 @@ All notable changes to Cairnwatch are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] — 2026-11-07
+
+### Added
+
+- `--max-tokens` flag for the completion budget (default 8192, previously
+  hard-coded to 4000).
+
+### Fixed
+
+- Models that hit the output limit now fail immediately with a clear
+  `finish_reason="length"` error instead of retrying a truncated
+  `submit_report` JSON call until the step limit is exhausted.
+- Completion token exhaustion is reported with the configured limit and actual
+  completion-token usage.
+
 ## [0.3.1] — 2026-11-07
 
 ### Added

@@ -19,7 +19,7 @@ import (
 	"github.com/subsll/cairnwatch/internal/progress"
 )
 
-var Version = "0.3.1"
+var Version = "0.3.2"
 
 // Run executes the CLI.
 func Run(args []string, out, errOut io.Writer) int {
@@ -53,7 +53,7 @@ func run(args []string, out, errOut io.Writer) int {
 		envelode, subsoil, stratum                            string
 		baseURL, model, apiKeyEnv                             string
 		timeout                                               time.Duration
-		maxSteps, maxEmailBytes                               int
+		maxSteps, maxEmailBytes, maxTokens                    int
 		scopes                                                stringList
 	)
 	fs.StringVar(&email, "email", "", "raw .eml/email file (required)")
@@ -76,6 +76,7 @@ func run(args []string, out, errOut io.Writer) int {
 	fs.DurationVar(&timeout, "timeout", 10*time.Minute, "overall run timeout")
 	fs.IntVar(&maxSteps, "max-steps", 8, "maximum model/tool steps")
 	fs.IntVar(&maxEmailBytes, "max-email-bytes", 200000, "maximum email bytes sent to the model")
+	fs.IntVar(&maxTokens, "max-tokens", 8192, "maximum completion tokens per model response")
 	fs.StringVar(&baseURL, "base-url", envOr("OPENAI_BASE_URL", "https://api.openai.com/v1"), "OpenAI-compatible base URL")
 	fs.StringVar(&model, "model", envOr("OPENAI_MODEL", "gpt-4o-mini"), "model name")
 	fs.StringVar(&apiKeyEnv, "api-key-env", "OPENAI_API_KEY", "environment variable holding the API key")
@@ -131,7 +132,7 @@ func run(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 
-	client := &openai.Client{BaseURL: baseURL, APIKey: key, Model: model}
+	client := &openai.Client{BaseURL: baseURL, APIKey: key, Model: model, MaxTokens: maxTokens}
 	if verbose {
 		client.Trace = errOut
 		fmt.Fprintln(errOut, "cairnwatch: verbose diagnostics enabled; email and report bodies are not logged, but tool-call summaries may include domain names")

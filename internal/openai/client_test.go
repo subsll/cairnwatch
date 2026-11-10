@@ -16,6 +16,15 @@ func TestChatReturnsFinishReasonAndTracesMetadataOnly(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-secret" {
 			t.Fatalf("Authorization = %q", got)
 		}
+		var requestBody struct {
+			MaxTokens int `json:"max_tokens"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatal(err)
+		}
+		if requestBody.MaxTokens != 9000 {
+			t.Errorf("max_tokens = %d, want 9000", requestBody.MaxTokens)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{
@@ -35,10 +44,11 @@ func TestChatReturnsFinishReasonAndTracesMetadataOnly(t *testing.T) {
 	defer server.Close()
 
 	client := &Client{
-		BaseURL: server.URL + "/v1",
-		APIKey:  "test-secret",
-		Model:   "test-model",
-		Trace:   &trace,
+		BaseURL:   server.URL + "/v1",
+		APIKey:    "test-secret",
+		Model:     "test-model",
+		MaxTokens: 9000,
+		Trace:     &trace,
 	}
 	msg, usage, err := client.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}}, []Tool{})
 	if err != nil {

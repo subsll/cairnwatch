@@ -78,6 +78,9 @@ exit 0
 		if !strings.Contains(string(body), "subsoil_passive_dns") {
 			t.Errorf("request missing tool definitions")
 		}
+		if !strings.Contains(string(body), `"max_tokens":9000`) {
+			t.Errorf("request missing configured max_tokens: %s", body)
+		}
 		reqs++
 		var msg map[string]any
 		switch reqs {
@@ -102,7 +105,7 @@ exit 0
 		"--case-name", "Test case", "--operator", "Tester", "--authorized",
 		"--send-email-content", "--base-url", server.URL, "--model", "mock",
 		"--api-key-env", "CAIRN_TEST_KEY", "--envelode-bin", envelode,
-		"--subsoil-bin", subsoil, "--stratum-bin", stratum, "--verbose",
+		"--subsoil-bin", subsoil, "--stratum-bin", stratum, "--verbose", "--max-tokens", "9000",
 	}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%s stdout=%s", code, errOut.String(), out.String())

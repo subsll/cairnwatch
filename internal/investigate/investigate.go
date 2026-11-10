@@ -26,7 +26,7 @@ import (
 	"github.com/subsll/cairnwatch/internal/openai"
 )
 
-const Version = "0.3.1"
+const Version = "0.3.2"
 
 var urlPattern = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
 
@@ -303,6 +303,13 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		lastToolCalls = toolCallSummary(msg.ToolCalls)
 		cfg.tracef("step %d/%d: finish_reason=%q content_bytes=%d tool_calls=%s prompt_tokens=%d completion_tokens=%d",
 			step+1, cfg.MaxSteps, msg.FinishReason, len(msg.Content), lastToolCalls, usage.PromptTokens, usage.CompletionTokens)
+		maxTokens := cfg.Client.MaxTokens
+		if maxTokens <= 0 {
+			maxTokens = 8192
+		}
+		if err := finishReasonError(msg, maxTokens, usage.CompletionTokens); err != nil {
+			return nil, err
+		}
 		messages = append(messages, msg)
 		if len(msg.ToolCalls) == 0 {
 			if strings.TrimSpace(msg.Content) != "" {
@@ -481,6 +488,17 @@ func (r *runner) subsoil(ctx context.Context, domain string) (string, error) {
 	}
 	b, _ := json.MarshalIndent(summary, "", "  ")
 	return string(b), nil
+}
+
+func finishReasonError(msg openai.Message, maxTokens, completionTokens int) error {
+	switch msg.FinishReason {
+	case "", "stop", "tool_calls":
+		return nil
+	case "length":
+		return fmt.Errorf("model output hit the completion token limit (finish_reason=%q, max_tokens=%d, completion_tokens=%d); the response or tool-call JSON may be truncated. Increase --max-tokens or ask for a shorter report", msg.FinishReason, maxTokens, completionTokens)
+	default:
+		return fmt.Errorf("model stopped before completing the report (finish_reason=%q, content_bytes=%d); no report was submitted", msg.FinishReason, len(msg.Content))
+	}
 }
 
 func toolCallSummary(calls []openai.ToolCall) string {

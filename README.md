@@ -276,6 +276,14 @@ Verbose output deliberately does **not** include the email body, report body,
 tool arguments or tool results, but tool-call summaries can contain domain names.
 It writes to stderr and disables the spinner so the trace stays readable.
 
+If the trace shows `finish_reason="length"` and `completion_tokens` equal to the
+limit, generation was cut off. A truncated `submit_report` tool call produces
+`invalid arguments: unexpected end of JSON input`, not a valid report. Cairnwatch
+now fails immediately with a clear message instead of retrying the broken call.
+Raise the output budget, for example `--max-tokens 16384` when the model supports
+it, or ask for a more concise report. The API limit applies to the whole completion,
+including any reasoning tokens.
+
 If the trace shows the same discovery tool repeatedly, the model is looping rather
 than reasoning to a conclusion. If it shows `submit_report` errors, fix that
 precondition or prompt. If it shows repeated `tool_calls` with no `submit_report`,

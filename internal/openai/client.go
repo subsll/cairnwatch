@@ -15,10 +15,11 @@ import (
 
 // Client is an OpenAI-compatible chat-completions client.
 type Client struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	HTTP    *http.Client
+	BaseURL   string
+	APIKey    string
+	Model     string
+	MaxTokens int
+	HTTP      *http.Client
 	// Trace, when non-nil, receives model-step metadata. It must never receive
 	// the API key, message bodies, tool arguments, or tool results.
 	Trace io.Writer
@@ -103,9 +104,13 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (Me
 	if c.HTTP == nil {
 		c.HTTP = &http.Client{Timeout: 120 * time.Second}
 	}
+	maxTokens := c.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 8192
+	}
 	body, err := json.Marshal(chatRequest{
 		Model: c.Model, Messages: messages, Tools: tools, ToolChoice: "auto",
-		Temperature: 0.2, MaxTokens: 4000,
+		Temperature: 0.2, MaxTokens: maxTokens,
 	})
 	if err != nil {
 		return Message{}, Usage{}, err
@@ -114,7 +119,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (Me
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint += "/chat/completions"
 	}
-	c.tracef("POST %s model=%q messages=%d tools=%d", endpoint, c.Model, len(messages), len(tools))
+	c.tracef("POST %s model=%q messages=%d tools=%d max_tokens=%d", endpoint, c.Model, len(messages), len(tools), maxTokens)
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
@@ -130,7 +135,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, tools []Tool) (Me
 		}
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "cairnwatch/0.3.1")
+		req.Header.Set("User-Agent", "cairnwatch/0.3.2")
 		c.tracef("request attempt %d/3", attempt+1)
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
